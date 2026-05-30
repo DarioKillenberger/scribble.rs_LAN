@@ -19,7 +19,7 @@
     <link rel="prefetch" href='{{.RootPath}}/resources/{{.WithCacheBust "no-sound.svg"}}' />
 </head>
 
-<body {{if eq .Translation.IsRtl true}} dir="rtl" {{end}}>
+<body {{if eq .Translation.IsRtl true}} dir="rtl" {{end}} data-lan-terminal-role="{{.LanTerminalRole}}">
     <div id="app">
         <noscript><span class="noscript">{{.Translation.Get "requires-js"}}</span></noscript>
 
@@ -98,6 +98,14 @@
                                         class="header-button-image" />
                                     {{.Translation.Get "change-lobby-settings-tooltip"}}
                                 </button>
+                                <button id="lan-setup-button" style="display: none;"
+                                    class="dialog-button menu-item header-button"
+                                    alt="{{.Translation.Get "lan-setup-title"}}"
+                                    title="{{.Translation.Get "lan-setup-title"}}">
+                                    <img src='{{.RootPath}}/resources/{{.WithCacheBust "settings.svg"}}'
+                                        class="header-button-image" />
+                                    {{.Translation.Get "lan-setup-title"}}
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -138,7 +146,7 @@
                         <div id="start-dialog" class="center-dialog">
                             <span class="dialog-title">{{.Translation.Get "start-the-game"}}</span>
                             <div class="center-dialog-content">
-                                <div style="display: flex; flex-direction:
+                                <div id="classic-start-controls" style="display: flex; flex-direction:
                                     column; gap: 0.5rem;">
                                     <div style="display: flex; flex-direction:
                                         row; gap: 0.5rem; align-items: center;">
@@ -149,6 +157,7 @@
                                             class="dialog-button">{{.Translation.Get "apply"}}</button>
                                     </div>
                                 </div>
+                                <div id="lan-start-status" class="lan-start-status"></div>
                             </div>
                             <div class="button-bar">
                                 <div class="ready-check-box-wrapper">
@@ -167,6 +176,16 @@
                             <span class="dialog-title">{{.Translation.Get "waiting-for-word-selection"}}</span>
                             <div class="center-dialog-content">
                                 <span id="waitchoose-drawer"></span>&nbsp;{{.Translation.Get "is-choosing-word"}}
+                            </div>
+                        </div>
+
+                        <div id="lan-next-drawer-dialog" class="center-dialog">
+                            <span class="dialog-title">UP NEXT</span>
+                            <div class="center-dialog-content">
+                                <div class="lan-next-drawer-name" id="lan-next-drawer-name"></div>
+                            </div>
+                            <div class="button-bar">
+                                <button id="lan-next-drawer-ready-button" class="dialog-button">Ready</button>
                             </div>
                         </div>
 
@@ -211,6 +230,15 @@
                                     <input id="lobby-settings-clients-per-ip-limit" type="number"
                                         name="clients_per_ip_limit" min="{{.MinClientsPerIPLimit}}"
                                         max="{{.MaxClientsPerIPLimit}}" value="{{.ClientsPerIPLimit}}" />
+                                    <b>{{.Translation.Get "lobby-mode"}}</b>
+                                    <input id="lobby-settings-lobby-mode" type="text" name="lobby_mode"
+                                        value="{{.LobbyMode}}" readonly />
+                                    <b>{{.Translation.Get "lan-player-count"}}</b>
+                                    <input id="lobby-settings-lan-player-count" type="number" name="lan_player_count"
+                                        min="{{.MinMaxPlayers}}" max="{{.MaxMaxPlayers}}" value="{{.LanPlayerCount}}" />
+                                    <b>{{.Translation.Get "lan-keyboard-count"}}</b>
+                                    <input id="lobby-settings-lan-keyboard-count" type="number" name="lan_keyboard_count"
+                                        min="1" max="{{.MaxMaxPlayers}}" value="{{.LanKeyboardCount}}" />
                                 </div>
                             </div>
                             <div class="button-bar">
@@ -237,6 +265,26 @@
                                 </div>
                                 <button id="force-restart-button" class="dialog-button">{{.Translation.Get
                                     "force-restart"}}</button>
+                            </div>
+                        </div>
+
+                        <div id="lan-setup-dialog" class="center-dialog">
+                            <span class="dialog-title">{{.Translation.Get "lan-setup-title"}}</span>
+                            <div class="center-dialog-content">
+                                <div class="lan-setup">
+                                    <b>{{.Translation.Get "lan-helper-command"}}</b>
+                                    <input id="lan-helper-command" class="namechange-field" type="text" readonly />
+                                    <b>{{.Translation.Get "lan-keyboard-assignments"}}</b>
+                                    <div id="lan-assignment-list"></div>
+                                </div>
+                            </div>
+                            <div class="button-bar">
+                                <button id="lan-setup-save-button" class="dialog-button">
+                                    {{.Translation.Get "save"}}
+                                </button>
+                                <button id="lan-setup-close-button" class="dialog-button">
+                                    {{.Translation.Get "close"}}
+                                </button>
                             </div>
                         </div>
 
@@ -377,6 +425,9 @@
                 <div id="message-container"></div>
                 <input id="message-input" type="text" autocomplete="off"
                     placeholder="{{.Translation.Get "message-input-placeholder"}}" />
+            </div>
+            <div id="lan-guessing-panel">
+                <div id="lan-guessing-rows"></div>
             </div>
         </div>
     </div>

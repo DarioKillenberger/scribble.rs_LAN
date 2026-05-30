@@ -14,6 +14,8 @@ playground/
 .env
 # Anything temporary
 *.tmp
+.go-build/
+.go-mod/
 # Profiling results
 *.pprof
 # Additional files for hosting. Workaround for now ig.

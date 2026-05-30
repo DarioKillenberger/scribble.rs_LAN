@@ -48,6 +48,18 @@ func ParseScoreCalculation(value string) (game.ScoreCalculation, error) {
 	return nil, errors.New("the given score calculation doesn't match any supported algorithm")
 }
 
+func ParseLobbyMode(value string) (game.LobbyMode, error) {
+	toLower := strings.ToLower(strings.TrimSpace(value))
+	switch game.LobbyMode(toLower) {
+	case "", game.LobbyModeClassic:
+		return game.LobbyModeClassic, nil
+	case game.LobbyModeLanParty:
+		return game.LobbyModeLanParty, nil
+	}
+
+	return "", errors.New("the given lobby mode doesn't match any supported mode")
+}
+
 // ParseDrawingTime checks whether the given value is an integer between
 // the lower and upper bound of drawing time. All other invalid
 // input, including empty strings, will return an error.
@@ -70,6 +82,15 @@ func ParseRounds(cfg *config.Config, value string) (int, error) {
 func ParseMaxPlayers(cfg *config.Config, value string) (int, error) {
 	return parseIntValue(value, cfg.LobbySettingBounds.MinMaxPlayers,
 		cfg.LobbySettingBounds.MaxMaxPlayers, "max players amount")
+}
+
+func ParseLanPlayerCount(cfg *config.Config, value string) (int, error) {
+	return parseIntValue(value, cfg.LobbySettingBounds.MinMaxPlayers,
+		cfg.LobbySettingBounds.MaxMaxPlayers, "LAN player count")
+}
+
+func ParseLanKeyboardCount(cfg *config.Config, value string) (int, error) {
+	return parseIntValue(value, 1, cfg.LobbySettingBounds.MaxMaxPlayers, "LAN keyboard count")
 }
 
 // ParseCustomWords checks whether the given value is a string containing comma

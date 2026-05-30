@@ -25,6 +25,9 @@ type LobbySettingDefaults struct {
 	Language           string `env:"LANGUAGE"`
 	ScoreCalculation   string `env:"SCORE_CALCULATION"`
 	WordsPerTurn       string `env:"WORDS_PER_TURN"`
+	LobbyMode          string `env:"LOBBY_MODE"`
+	LanPlayerCount     string `env:"LAN_PLAYER_COUNT"`
+	LanKeyboardCount   string `env:"LAN_KEYBOARD_COUNT"`
 }
 
 type CORS struct {
@@ -88,6 +91,9 @@ var Default = Config{
 		Language:           "english",
 		ScoreCalculation:   "chill",
 		WordsPerTurn:       "3",
+		LobbyMode:          string(game.LobbyModeClassic),
+		LanPlayerCount:     "5",
+		LanKeyboardCount:   "5",
 	},
 	LobbySettingBounds: game.SettingBounds{
 		MinDrawingTime:        60,

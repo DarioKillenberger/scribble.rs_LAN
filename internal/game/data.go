@@ -43,6 +43,15 @@ type Lobby struct {
 
 	// players references all participants of the Lobby.
 	players []*Player
+	// lanInputBuffers stores pending masked guesses per player for LAN-party
+	// shared-keyboard input.
+	lanInputBuffers map[uuid.UUID]*lanInputBuffer
+	// lanKnownKeyboards stores physical keyboard IDs seen from the LAN helper.
+	lanKnownKeyboards  map[string]time.Time
+	lanInputGeneration int64
+	LanControlToken    string
+	lanStartPending    bool
+	lanStartConfirmed  bool
 
 	// Whether the game has started, is ongoing or already over.
 	State State
@@ -105,6 +114,7 @@ type Lobby struct {
 	IsWordpackRtl bool
 
 	WriteObject          func(*Player, any) error
+	WriteObjectToRole    func(*Player, LanTerminalRole, any) error
 	WritePreparedMessage func(*Player, *gws.Broadcaster) error
 }
 
@@ -130,9 +140,48 @@ func (player *Player) GetWebsocket() *gws.Conn {
 	return player.ws
 }
 
+func (player *Player) GetWebsockets() []*gws.Conn {
+	if len(player.websockets) == 0 && player.ws != nil {
+		return []*gws.Conn{player.ws}
+	}
+
+	websockets := make([]*gws.Conn, 0, len(player.websockets))
+	for websocket := range player.websockets {
+		websockets = append(websockets, websocket)
+	}
+	return websockets
+}
+
 // SetWebsocket sets the given connection as the players websocket connection.
 func (player *Player) SetWebsocket(socket *gws.Conn) {
+	if socket != nil {
+		if player.websockets == nil {
+			player.websockets = make(map[*gws.Conn]bool)
+		}
+		player.websockets[socket] = true
+		if player.ws == nil {
+			player.ws = socket
+		}
+		return
+	}
+
 	player.ws = socket
+	player.websockets = nil
+}
+
+func (player *Player) RemoveWebsocket(socket *gws.Conn) {
+	delete(player.websockets, socket)
+	if player.ws == socket {
+		player.ws = nil
+		for otherSocket := range player.websockets {
+			player.ws = otherSocket
+			break
+		}
+	}
+}
+
+func (player *Player) HasWebsockets() bool {
+	return player.ws != nil || len(player.websockets) > 0
 }
 
 // GetUserSession returns the players current user session.
@@ -230,7 +279,7 @@ func (lobby *Lobby) HasConnectedPlayers() bool {
 	defer lobby.mutex.Unlock()
 
 	for _, otherPlayer := range lobby.players {
-		if otherPlayer.Connected {
+		if otherPlayer.Connected && (!otherPlayer.LanVirtual || otherPlayer.HasWebsockets()) {
 			return true
 		}
 	}

@@ -16,8 +16,9 @@ type lobbyPageData struct {
 	*BasePageConfig
 	*api.LobbyData
 
-	Translation *translations.Translation
-	Locale      string
+	Translation     *translations.Translation
+	Locale          string
+	LanTerminalRole game.LanTerminalRole
 }
 
 type lobbyJsData struct {
@@ -65,7 +66,40 @@ func (handler *SSRHandler) ssrEnterLobby(writer http.ResponseWriter, request *ht
 	handler.ssrEnterLobbyNoChecks(lobby, writer, request,
 		func() *game.Player {
 			return api.GetPlayer(lobby, request)
-		})
+		}, game.LanTerminalRoleNone)
+}
+
+func (handler *SSRHandler) ssrEnterLanDrawingTerminal(writer http.ResponseWriter, request *http.Request) {
+	handler.ssrEnterLanTerminal(writer, request, game.LanTerminalRoleDrawing)
+}
+
+func (handler *SSRHandler) ssrEnterLanGuessingTerminal(writer http.ResponseWriter, request *http.Request) {
+	handler.ssrEnterLanTerminal(writer, request, game.LanTerminalRoleGuessing)
+}
+
+func (handler *SSRHandler) ssrEnterLanTerminal(writer http.ResponseWriter, request *http.Request, role game.LanTerminalRole) {
+	translation, _ := determineTranslation(request)
+	lobby := state.GetLobby(request.PathValue("lobby_id"))
+	if lobby == nil {
+		handler.userFacingError(writer, translation.Get("lobby-doesnt-exist"), translation)
+		return
+	}
+	if lobby.LobbyMode != game.LobbyModeLanParty {
+		handler.userFacingError(writer, "This lobby is not in LAN-party mode.", translation)
+		return
+	}
+	requestPlayer := api.GetPlayer(lobby, request)
+	if request.URL.Query().Get("terminal_token") == lobby.LanControlToken {
+		requestPlayer = lobby.GetOwner()
+	}
+	if requestPlayer == nil || requestPlayer.ID != lobby.OwnerID {
+		handler.userFacingError(writer, "Only the lobby owner can open LAN-party terminal pages.", translation)
+		return
+	}
+	handler.ssrEnterLobbyNoChecks(lobby, writer, request,
+		func() *game.Player {
+			return requestPlayer
+		}, role)
 }
 
 func (handler *SSRHandler) ssrEnterLobbyNoChecks(
@@ -73,6 +107,7 @@ func (handler *SSRHandler) ssrEnterLobbyNoChecks(
 	writer http.ResponseWriter,
 	request *http.Request,
 	getPlayer func() *game.Player,
+	lanTerminalRole game.LanTerminalRole,
 ) {
 	translation, locale := determineTranslation(request)
 	requestAddress := api.GetIPAddressFromRequest(request)
@@ -98,7 +133,7 @@ func (handler *SSRHandler) ssrEnterLobbyNoChecks(
 			newPlayer.SetLastKnownAddress(requestAddress)
 			api.SetGameplayCookies(writer, request, newPlayer, lobby)
 		} else {
-			if player.Connected && player.GetWebsocket() != nil {
+			if lanTerminalRole == game.LanTerminalRoleNone && !player.LanVirtual && player.Connected && player.GetWebsocket() != nil {
 				handler.userFacingError(writer, translation.Get("lobby-open-tab-exists"), translation)
 				return
 			}
@@ -107,10 +142,11 @@ func (handler *SSRHandler) ssrEnterLobbyNoChecks(
 		}
 
 		pageData = &lobbyPageData{
-			BasePageConfig: handler.basePageConfig,
-			LobbyData:      api.CreateLobbyData(handler.cfg, lobby),
-			Translation:    translation,
-			Locale:         locale,
+			BasePageConfig:  handler.basePageConfig,
+			LobbyData:       api.CreateLobbyData(handler.cfg, lobby),
+			Translation:     translation,
+			Locale:          locale,
+			LanTerminalRole: lanTerminalRole,
 		}
 	})
 

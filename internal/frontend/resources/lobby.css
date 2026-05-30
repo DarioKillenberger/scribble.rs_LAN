@@ -282,6 +282,172 @@ kbd {
     min-height: 100%;
 }
 
+#lan-guessing-panel {
+    display: none;
+    flex-direction: column;
+    grid-column: 3;
+    grid-row-start: 2;
+    grid-row-end: 3;
+    height: 0;
+    min-height: 100%;
+    background-color: white;
+    border-radius: var(--component-border-radius);
+    overflow: hidden;
+}
+
+#lan-guessing-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.2rem;
+    border-top: 1px solid rgb(220, 220, 220);
+    flex: 0 0 auto;
+    max-height: 42%;
+    overflow-y: auto;
+}
+
+#lan-guessing-panel #message-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    border-radius: var(--component-border-radius) var(--component-border-radius)
+        0 0;
+}
+
+.lan-setup {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: min(42rem, 80vw);
+}
+
+#lan-helper-command {
+    font-family: monospace;
+}
+
+#lan-assignment-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.lan-assignment-row {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) minmax(12rem, 2fr);
+    gap: 0.5rem;
+    align-items: center;
+    border-left: 0.4rem solid black;
+    background-color: rgb(245, 245, 245);
+    padding: 0.4rem;
+    border-radius: var(--component-border-radius);
+}
+
+.lan-assignment-name {
+    font-weight: bold;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lan-guess-row {
+    display: grid;
+    grid-template-columns: minmax(4rem, 1fr) minmax(4.5rem, auto) minmax(3rem, 1fr);
+    grid-template-rows: auto;
+    gap: 0.15rem 0.3rem;
+    border-left: 0.22rem solid black;
+    background-color: rgb(245, 245, 245);
+    padding: 0.16rem 0.25rem;
+    border-radius: var(--component-border-radius);
+    font-size: 0.72rem;
+    align-items: center;
+}
+
+.lan-guess-row-locked {
+    opacity: 0.55;
+}
+
+.lan-guess-name {
+    font-weight: bold;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lan-guess-keyboard {
+    color: lightslategray;
+    font-family: monospace;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.lan-guess-input {
+    min-height: 0.9rem;
+    font-family: monospace;
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
+    text-align: right;
+}
+
+.lan-guessing-terminal #toolbox {
+    display: none !important;
+}
+
+.lan-guessing-terminal #drawing-board {
+    pointer-events: none;
+    cursor: default;
+}
+
+.lan-start-status {
+    display: none;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: min(28rem, 72vw);
+}
+
+.lan-start-row {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+    border-left: 0.45rem solid black;
+    background-color: rgb(245, 245, 245);
+    padding: 0.55rem;
+    border-radius: var(--component-border-radius);
+}
+
+.lan-start-row-ready {
+    background-color: rgb(255, 224, 66);
+}
+
+.lan-start-name {
+    font-weight: bold;
+    overflow-wrap: anywhere;
+}
+
+.lan-start-state {
+    color: lightslategray;
+    white-space: nowrap;
+}
+
+.lan-next-drawer-name {
+    font-size: 2rem;
+    font-weight: bold;
+    overflow-wrap: anywhere;
+    text-align: center;
+}
+
+.lan-drawing-terminal-hint {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: min(42rem, 75vw);
+}
+
+.lan-drawing-terminal-hint input {
+    font-family: monospace;
+    width: 100%;
+    box-sizing: border-box;
+}
+
 #message-container {
     overflow-y: scroll;
     background-color: white;
@@ -771,6 +937,13 @@ kbd {
     }
 
     #chat {
+        grid-column: 2;
+        grid-row: 4;
+        height: 0;
+        min-height: 100%;
+    }
+
+    #lan-guessing-panel {
         grid-column: 2;
         grid-row: 4;
         height: 0;

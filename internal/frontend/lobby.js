@@ -7,6 +7,35 @@ String.prototype.format = function () {
 const discordInstanceId = getCookie("discord-instance-id");
 const rootPath = `${discordInstanceId ? ".proxy/" : ""}{{.RootPath}}`;
 const keyboardManager = new KeyboardManager();
+const lanTerminalRole = document.body.dataset.lanTerminalRole || "";
+const isLanGuessingTerminal = lanTerminalRole === "guessing_terminal";
+const isLanDrawingTerminal = lanTerminalRole === "drawing_terminal";
+
+if (isLanGuessingTerminal) {
+    document.body.classList.add("lan-guessing-terminal");
+}
+if (isLanDrawingTerminal) {
+    document.body.classList.add("lan-drawing-terminal");
+}
+
+if (isLanGuessingTerminal) {
+    window.addEventListener(
+        "keydown",
+        (event) => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        },
+        true,
+    );
+    window.addEventListener(
+        "keypress",
+        (event) => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        },
+        true,
+    );
+}
 
 let socketIsConnecting = false;
 let hasSocketEverConnected = false;
@@ -45,6 +74,8 @@ const playerContainer = document.getElementById("player-container");
 const wordContainer = document.getElementById("word-container");
 const chat = document.getElementById("chat");
 const messageContainer = document.getElementById("message-container");
+const lanGuessingPanel = document.getElementById("lan-guessing-panel");
+const lanGuessingRows = document.getElementById("lan-guessing-rows");
 const roundSpan = document.getElementById("rounds");
 const maxRoundSpan = document.getElementById("max-rounds");
 const timeLeftValue = document.getElementById("time-left-value");
@@ -54,6 +85,11 @@ const centerDialogs = document.getElementById("center-dialogs");
 
 const waitChooseDialog = document.getElementById("waitchoose-dialog");
 const waitChooseDrawerSpan = document.getElementById("waitchoose-drawer");
+const lanNextDrawerDialog = document.getElementById("lan-next-drawer-dialog");
+const lanNextDrawerName = document.getElementById("lan-next-drawer-name");
+const lanNextDrawerReadyButton = document.getElementById(
+    "lan-next-drawer-ready-button",
+);
 const namechangeDialog = document.getElementById("namechange-dialog");
 const namechangeFieldStartDialog = document.getElementById(
     "namechange-field-start-dialog",
@@ -62,8 +98,14 @@ const namechangeField = document.getElementById("namechange-field");
 
 const lobbySettingsButton = document.getElementById("lobby-settings-button");
 const lobbySettingsDialog = document.getElementById("lobbysettings-dialog");
+const lanSetupButton = document.getElementById("lan-setup-button");
+const lanSetupDialog = document.getElementById("lan-setup-dialog");
+const lanHelperCommand = document.getElementById("lan-helper-command");
+const lanAssignmentList = document.getElementById("lan-assignment-list");
 
 const startDialog = document.getElementById("start-dialog");
+const classicStartControls = document.getElementById("classic-start-controls");
+const lanStartStatus = document.getElementById("lan-start-status");
 const forceStartButton = document.getElementById("force-start-button");
 const gameOverDialog = document.getElementById("game-over-dialog");
 const gameOverDialogTitle = document.getElementById("game-over-dialog-title");
@@ -97,6 +139,9 @@ function hideMenu() {
 
 function showDialog(id, title, contentNode, buttonBar) {
     hideMenu();
+    if (id && id !== "") {
+        closeDialog(id);
+    }
 
     const newDialog = document.createElement("div");
     newDialog.classList.add("center-dialog");
@@ -338,6 +383,15 @@ function saveLobbySettings() {
                 words_per_turn: document.getElementById(
                     "lobby-settings-words-per-turn",
                 ).value,
+                lobby_mode: document.getElementById(
+                    "lobby-settings-lobby-mode",
+                ).value,
+                lan_player_count: document.getElementById(
+                    "lobby-settings-lan-player-count",
+                ).value,
+                lan_keyboard_count: document.getElementById(
+                    "lobby-settings-lan-keyboard-count",
+                ).value,
             }),
         {
             method: "PATCH",
@@ -358,6 +412,47 @@ function saveLobbySettings() {
 document
     .getElementById("lobby-settings-save-button")
     .addEventListener("click", saveLobbySettings);
+
+async function refreshLanSetupData() {
+    if (ownerID !== ownID || lobbyMode !== "lan_party") {
+        return;
+    }
+
+    const response = await fetch(
+        `${rootPath}/v1/lobby/${getCookie("lobby-id") || ""}/lan/setup`,
+    );
+    if (!response.ok) {
+        throw new Error(await response.text());
+    }
+
+    const setup = await response.json();
+    lanControlToken = setup.lanControlToken || "";
+    if (setup.lanInputState) {
+        applyLanInputState(setup.lanInputState);
+    }
+}
+
+async function showLanSetupDialog() {
+    hideMenu();
+    try {
+        await refreshLanSetupData();
+    } catch (error) {
+        alert(`Error loading LAN setup: ${error.message}`);
+    }
+    renderLanSetup();
+    lanSetupDialog.style.visibility = "visible";
+}
+lanSetupButton.addEventListener("click", showLanSetupDialog);
+
+function hideLanSetupDialog() {
+    lanSetupDialog.style.visibility = "hidden";
+}
+document
+    .getElementById("lan-setup-close-button")
+    .addEventListener("click", hideLanSetupDialog);
+document
+    .getElementById("lan-setup-save-button")
+    .addEventListener("click", saveLanAssignments);
 
 function toggleSound() {
     sound = !sound;
@@ -866,7 +961,7 @@ messageInput.addEventListener("keydown", function (event) {
 });
 
 function setAllowDrawing(value) {
-    allowDrawing = value;
+    allowDrawing = !isLanGuessingTerminal && value;
     updateDrawingStateUI();
 
     if (allowDrawing) {
@@ -885,6 +980,7 @@ function chooseWord(index) {
     );
     setAllowDrawing(true);
     wordDialog.style.visibility = "hidden";
+    lanNextDrawerDialog.style.visibility = "hidden";
 }
 
 function onVotekickPlayer(playerId) {
@@ -911,6 +1007,11 @@ let round = 0;
 let rounds = 0;
 let roundEndTime = 0;
 let gameState = "unstarted";
+let lobbyMode = "classic";
+let lanControlToken = "";
+let cachedLanInputState = null;
+let pendingLanYourTurn = null;
+let lanDrawingHintShownForCurrentGame = false;
 let drawingTimeSetting = "∞";
 
 const handleEvent = (parsed) => {
@@ -936,6 +1037,11 @@ const handleEvent = (parsed) => {
         handleReadyEvent(ready);
     } else if (parsed.type === "update-players") {
         applyPlayers(parsed.data);
+    } else if (parsed.type === "lan-start-pending") {
+        redirectToLanGuessingTerminalIfNeeded();
+        showLanDrawingTerminalHint(true);
+    } else if (parsed.type === "lan-input-state" || parsed.type === "lan-assignment-update") {
+        applyLanInputState(parsed.data);
     } else if (parsed.type === "name-change") {
         const player = getCachedPlayer(parsed.data.playerId);
         if (player !== null) {
@@ -976,10 +1082,14 @@ const handleEvent = (parsed) => {
             }
         }
     } else if (parsed.type === "close-guess") {
+        const closeGuess =
+            typeof parsed.data === "string"
+                ? { author: null, content: parsed.data }
+                : parsed.data;
         appendMessage(
             "close-guess-message",
-            null,
-            `{{.Translation.Get "close-guess"}}`.format(parsed.data),
+            closeGuess.author,
+            `{{.Translation.Get "close-guess"}}`.format(closeGuess.content),
         );
     } else if (parsed.type === "update-wordhint") {
         wordDialog.style.visibility = "hidden";
@@ -987,8 +1097,9 @@ const handleEvent = (parsed) => {
         applyWordHints(parsed.data);
 
         // We don't do this in applyWordHints because that's called in all kinds of places
-        if (parsed.data.some((hint) => hint.character)) {
-            var hints = parsed.data
+        const displayHints = wordHintsForTerminal(parsed.data);
+        if (displayHints.some((hint) => hint.character)) {
+            var hints = displayHints
                 .map((hint) => {
                     if (hint.character) {
                         var char = String.fromCharCode(hint.character);
@@ -1049,10 +1160,12 @@ const handleEvent = (parsed) => {
     } else if (parsed.type === "word-chosen") {
         wordDialog.style.visibility = "hidden";
         waitChooseDialog.style.visibility = "hidden";
+        lanNextDrawerDialog.style.visibility = "hidden";
         setRoundTimeLeft(parsed.data.timeLeft);
         applyWordHints(parsed.data.hints);
-        setAllowDrawing(drawerID === ownID);
+        setAllowDrawing(isLanDrawingTerminal || drawerID === ownID);
     } else if (parsed.type === "next-turn") {
+        const wasStartingGame = gameState !== "ongoing";
         if (gameState === "ongoing") {
             if (parsed.data.roundEndReason === "drawer_disconnected") {
                 appendMessage(
@@ -1073,6 +1186,9 @@ const handleEvent = (parsed) => {
             //First turn, the game starts
             gameState = "ongoing";
         }
+        if (wasStartingGame) {
+            redirectToLanGuessingTerminalIfNeeded();
+        }
 
         //As soon as a turn starts, the round should be ongoing, so we make
         //sure that all types of dialogs, that indicate the game isn't
@@ -1083,6 +1199,8 @@ const handleEvent = (parsed) => {
 
         //If a player doesn't choose, the dialog will still be up.
         wordDialog.style.visibility = "hidden";
+        lanNextDrawerDialog.style.visibility = "hidden";
+        pendingLanYourTurn = null;
         playWav('{{.RootPath}}/resources/{{.WithCacheBust "end-turn.wav"}}');
 
         clear(context);
@@ -1094,10 +1212,11 @@ const handleEvent = (parsed) => {
 
         set_dummy_word_hints();
 
-        //Even though we always hide the dialog in the "your-turn"
-        //event handling, it will be shortly visible if we it here.
-        if (drawerID !== ownID) {
-            //Show additional dialog, that another user (drawer) is choosing a word
+        if (isLanGuessingTerminal) {
+            waitChooseDialog.style.visibility = "hidden";
+        } else if (isLanDrawingTerminal) {
+            showLanNextDrawerDialog();
+        } else if (drawerID !== ownID) {
             waitChooseDrawerSpan.innerText = drawerName;
             waitChooseDialog.style.visibility = "visible";
         }
@@ -1108,6 +1227,15 @@ const handleEvent = (parsed) => {
         //This dialog could potentially stay visible from last
         //turn, in case nobody has chosen a word.
         waitChooseDialog.style.visibility = "hidden";
+        if (isLanGuessingTerminal) {
+            wordDialog.style.visibility = "hidden";
+            return;
+        }
+        if (isLanDrawingTerminal) {
+            pendingLanYourTurn = parsed.data;
+            showLanNextDrawerDialog();
+            return;
+        }
         promptWords(parsed.data);
     } else if (parsed.type === "drawing") {
         applyDrawData(parsed.data);
@@ -1241,6 +1369,8 @@ function setRoundTimeLeft(timeLeftMs) {
 const handleReadyEvent = (ready) => {
     ownerID = ready.ownerId;
     ownID = ready.playerId;
+    lobbyMode = ready.lobbyMode || "classic";
+    lanControlToken = ready.lanControlToken || lanControlToken;
 
     setRoundTimeLeft(ready.timeLeft);
     setUsernameLocally(ready.playerName);
@@ -1255,6 +1385,13 @@ const handleReadyEvent = (ready) => {
     if (ready.players && ready.players.length) {
         applyPlayers(ready.players);
     }
+    if (ready.lanInputState) {
+        applyLanInputState(ready.lanInputState);
+    }
+    if (ready.lanStartPending) {
+        redirectToLanGuessingTerminalIfNeeded();
+        showLanDrawingTerminalHint(true);
+    }
     if (ready.currentDrawing && ready.currentDrawing.length) {
         applyDrawData(ready.currentDrawing);
     }
@@ -1265,13 +1402,18 @@ const handleReadyEvent = (ready) => {
     }
 
     if (ready.gameState === "unstarted") {
+        if (!ready.lanStartPending) {
+            lanDrawingHintShownForCurrentGame = false;
+        }
         startDialog.style.visibility = "visible";
+        updateLanStartControls();
         if (ownerID === ownID) {
             forceStartButton.style.display = "block";
         } else {
             forceStartButton.style.display = "none";
         }
     } else if (ready.gameState === "gameOver") {
+        lanDrawingHintShownForCurrentGame = false;
         gameOverDialog.style.visibility = "visible";
         if (ownerID === ownID) {
             forceRestartButton.style.display = "block";
@@ -1344,19 +1486,327 @@ const handleReadyEvent = (ready) => {
                 );
         }
     } else if (ready.gameState === "ongoing") {
+        startDialog.style.visibility = "hidden";
+        redirectToLanGuessingTerminalIfNeeded();
         // Lack of wordHints implies that word has been chosen yet.
-        if (!ready.wordHints && drawerID !== ownID) {
+        if (isLanGuessingTerminal) {
+            waitChooseDialog.style.visibility = "hidden";
+            wordDialog.style.visibility = "hidden";
+        } else if (!ready.wordHints && isLanDrawingTerminal) {
+            showLanNextDrawerDialog();
+        } else if (!ready.wordHints && drawerID !== ownID) {
             waitChooseDrawerSpan.innerText = drawerName;
             waitChooseDialog.style.visibility = "visible";
         }
     }
 };
 
+function applyLanInputState(state) {
+    if (!state) {
+        return;
+    }
+    cachedLanInputState = state;
+    if (lanSetupDialog.style.visibility === "visible") {
+        renderLanSetup();
+    }
+    renderLanStartStatus();
+    if (!isLanGuessingTerminal) {
+        return;
+    }
+    lanGuessingPanel.style.display = "flex";
+    chat.style.display = "none";
+    if (messageContainer.parentElement !== lanGuessingPanel) {
+        lanGuessingPanel.insertBefore(messageContainer, lanGuessingRows);
+    }
+    lanGuessingRows.replaceChildren(
+        ...state.rows.map((row, index) => {
+            const rowElement = document.createElement("div");
+            rowElement.classList.add("lan-guess-row");
+            if (row.locked) {
+                rowElement.classList.add("lan-guess-row-locked");
+            }
+            rowElement.style.borderLeftColor = row.color;
+
+            const nameElement = document.createElement("span");
+            nameElement.classList.add("lan-guess-name");
+            nameElement.innerText = row.playerName;
+            rowElement.appendChild(nameElement);
+
+            const keyboardElement = document.createElement("span");
+            keyboardElement.classList.add("lan-guess-keyboard");
+            keyboardElement.innerText = row.keyboardId
+                ? `Keyboard ${index + 1}`
+                : "Unassigned";
+            rowElement.appendChild(keyboardElement);
+
+            const inputElement = document.createElement("span");
+            inputElement.classList.add("lan-guess-input");
+            inputElement.innerText = lanGuessRowText(row);
+            rowElement.appendChild(inputElement);
+
+            return rowElement;
+        }),
+    );
+}
+
+function lanGuessRowText(row) {
+    if (row.disabledReason === "drawing") {
+        return "keyboard disabled while drawing";
+    }
+    if (row.disabledReason === "waiting") {
+        return "";
+    }
+    return row.maskedText;
+}
+
+function updateLanStartControls() {
+    const enabled = lobbyMode === "lan_party";
+    classicStartControls.style.display = enabled ? "none" : "flex";
+    lanStartStatus.style.display = enabled ? "flex" : "none";
+    if (enabled) {
+        document.activeElement?.blur?.();
+        renderLanStartStatus();
+    }
+}
+
+function renderLanStartStatus() {
+    if (lobbyMode !== "lan_party" || !cachedLanInputState || !lanStartStatus) {
+        return;
+    }
+
+    lanStartStatus.replaceChildren(
+        ...cachedLanInputState.rows.map((row) => {
+            const rowElement = document.createElement("div");
+            rowElement.classList.add("lan-start-row");
+            if (row.disabledReason === "ready") {
+                rowElement.classList.add("lan-start-row-ready");
+            }
+            rowElement.style.borderLeftColor = row.color;
+
+            const name = document.createElement("span");
+            name.classList.add("lan-start-name");
+            name.innerText = row.draftName || row.playerName;
+            rowElement.appendChild(name);
+
+            const status = document.createElement("span");
+            status.classList.add("lan-start-state");
+            if (row.disabledReason === "ready") {
+                status.innerText = "ready";
+            } else if (!row.keyboardId) {
+                status.innerText = "press any key";
+            } else {
+                status.innerText = "typing";
+            }
+            rowElement.appendChild(status);
+
+            return rowElement;
+        }),
+    );
+}
+
+function showLanNextDrawerDialog() {
+    if (!isLanDrawingTerminal || gameState !== "ongoing") {
+        return;
+    }
+    wordDialog.style.visibility = "hidden";
+    waitChooseDialog.style.visibility = "hidden";
+    lanNextDrawerName.innerText = drawerName || "";
+    lanNextDrawerDialog.style.visibility = "visible";
+}
+
+lanNextDrawerReadyButton.addEventListener("click", () => {
+    lanNextDrawerDialog.style.visibility = "hidden";
+    if (pendingLanYourTurn) {
+        const yourTurn = pendingLanYourTurn;
+        pendingLanYourTurn = null;
+        promptWords(yourTurn);
+    }
+});
+
+function lanTerminalPath(role) {
+    const lobbyID = getCookie("lobby-id") || "";
+    const tokenParam = lanControlToken
+        ? `?terminal_token=${encodeURIComponent(lanControlToken)}`
+        : "";
+    return `${rootPath}/lobby/${lobbyID}/lan/${role}${tokenParam}`;
+}
+
+function redirectToLanGuessingTerminalIfNeeded() {
+    if (lobbyMode !== "lan_party" || lanTerminalRole) {
+        return;
+    }
+    window.location.href = lanTerminalPath("guessing");
+}
+
+function showLanDrawingTerminalHint(confirmStartsGame) {
+    if (
+        lobbyMode !== "lan_party" ||
+        !isLanGuessingTerminal ||
+        lanDrawingHintShownForCurrentGame
+    ) {
+        return;
+    }
+    lanDrawingHintShownForCurrentGame = true;
+
+    const drawingURL = new URL(lanTerminalPath("drawing"), window.location.href);
+    const content = document.createElement("div");
+    content.classList.add("lan-drawing-terminal-hint");
+
+    const urlInput = document.createElement("input");
+    urlInput.type = "text";
+    urlInput.readOnly = true;
+    urlInput.value = drawingURL.href;
+    content.appendChild(urlInput);
+
+    const instructions = document.createElement("span");
+    instructions.innerText = drawingTerminalInstructions(drawingURL, false);
+    content.appendChild(instructions);
+
+    const closeButton = createDialogButton(
+        confirmStartsGame ? "Start Game" : '{{.Translation.Get "close"}}',
+    );
+    closeButton.addEventListener("click", () => {
+        closeDialog("lan-drawing-terminal-hint");
+        if (confirmStartsGame) {
+            socket.send(JSON.stringify({ type: "lan-start-confirm" }));
+        }
+    });
+    showDialog(
+        "lan-drawing-terminal-hint",
+        "Open Drawing Lobby",
+        content,
+        createDialogButtonBar(closeButton),
+    );
+
+    resolveLanDrawingURL().then((resolvedURL) => {
+        if (!resolvedURL) {
+            return;
+        }
+        urlInput.value = resolvedURL.href;
+        instructions.innerText = drawingTerminalInstructions(resolvedURL, true);
+    });
+}
+
+async function resolveLanDrawingURL() {
+    try {
+        const response = await fetch(`${rootPath}/v1/lan/network-addresses`);
+        if (!response.ok) {
+            return null;
+        }
+        const network = await response.json();
+        if (!network.origins || network.origins.length === 0) {
+            return null;
+        }
+        return new URL(lanTerminalPath("drawing"), network.origins[0]);
+    } catch {
+        return null;
+    }
+}
+
+function drawingTerminalInstructions(drawingURL, autoDetected) {
+    const host = drawingURL.hostname;
+    const localHost = host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+    if (localHost) {
+        return "Open the drawing lobby on the tablet using this URL, but replace localhost with this PC's Wi-Fi/LAN IP address, for example http://192.168.1.42:8080. The tablet must be on the same Wi-Fi, Windows Firewall must allow this port, and the Wi-Fi must not block device-to-device connections.";
+    }
+    if (autoDetected) {
+        return "This URL was generated from the server's active LAN address. Open it on the tablet. The tablet must be on the same Wi-Fi, Windows Firewall must allow this port, and the Wi-Fi must not block device-to-device connections. If this is running in Docker and the URL starts with 172.x, use the host PC's Wi-Fi/LAN IP instead.";
+    }
+    return "Open this drawing lobby URL on the tablet. The tablet must be on the same Wi-Fi, Windows Firewall must allow this port, and the Wi-Fi must not block device-to-device connections.";
+}
+
+function renderLanSetup() {
+    if (!cachedLanInputState || !cachedPlayers) {
+        return;
+    }
+
+    const token = lanControlToken || "<open LAN Setup as the lobby owner>";
+    lanHelperCommand.value = [
+        "go run ./cmd/laninput",
+        "-server",
+        window.location.origin + rootPath,
+        "-lobby",
+        getCookie("lobby-id") || "",
+        "-token",
+        token,
+    ].join(" ");
+
+    const knownKeyboards = cachedLanInputState.knownKeyboards || [];
+    lanAssignmentList.replaceChildren(
+        ...cachedLanInputState.rows.map((row) => {
+            const wrapper = document.createElement("label");
+            wrapper.classList.add("lan-assignment-row");
+            wrapper.style.borderLeftColor = row.color;
+
+            const name = document.createElement("span");
+            name.classList.add("lan-assignment-name");
+            name.innerText = row.playerName;
+            wrapper.appendChild(name);
+
+            const select = document.createElement("select");
+            select.dataset.playerId = row.playerId;
+
+            const emptyOption = document.createElement("option");
+            emptyOption.value = "";
+            emptyOption.innerText = "Unassigned";
+            select.appendChild(emptyOption);
+
+            const keyboardOptions = Array.from(
+                new Set([...knownKeyboards, row.keyboardId].filter(Boolean)),
+            ).sort();
+            keyboardOptions.forEach((keyboardId) => {
+                const option = document.createElement("option");
+                option.value = keyboardId;
+                option.innerText = keyboardId;
+                option.selected = keyboardId === row.keyboardId;
+                select.appendChild(option);
+            });
+
+            wrapper.appendChild(select);
+            return wrapper;
+        }),
+    );
+}
+
+function saveLanAssignments() {
+    const lobbyID = getCookie("lobby-id") || "";
+    const requests = Array.from(
+        lanAssignmentList.querySelectorAll("select[data-player-id]"),
+    )
+        .map((select) =>
+            fetch(`${rootPath}/v1/lobby/${lobbyID}/lan/assignment`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Lan-Control-Token": lanControlToken,
+                },
+                body: JSON.stringify({
+                    playerId: select.dataset.playerId,
+                    keyboardId: select.value,
+                }),
+            }),
+        );
+
+    Promise.all(requests).then((responses) => {
+        const failed = responses.find((response) => !response.ok);
+        if (failed) {
+            failed.text().then((text) => alert(text));
+            return;
+        }
+        hideLanSetupDialog();
+    });
+}
+
 function updateButtonVisibilities() {
     if (ownerID === ownID) {
         lobbySettingsButton.style.display = "flex";
     } else {
         lobbySettingsButton.style.display = "none";
+    }
+    if (ownerID === ownID && lobbyMode === "lan_party") {
+        lanSetupButton.style.display = "flex";
+    } else {
+        lanSetupButton.style.display = "none";
     }
 }
 
@@ -1402,6 +1852,9 @@ function appendMessage(styleClass, author, message, attrs) {
 
     const newMessageDiv = document.createElement("div");
     newMessageDiv.classList.add("message");
+    if (styleClass === null || styleClass === undefined || styleClass === "") {
+        styleClass = [];
+    }
     if (isString(styleClass)) {
         styleClass = [styleClass];
     }
@@ -1470,6 +1923,7 @@ function applyPlayers(players) {
         Array.from(reaadyNeededs).forEach((element) => {
             element.innerText = readyPlayersRequired.toString();
         });
+        renderLanStartStatus();
     }
 
     playerContainer.innerHTML = "";
@@ -1599,14 +2053,34 @@ function updateRoundsDisplay() {
     maxRoundSpan.innerText = rounds;
 }
 
+function wordHintsForTerminal(wordHints) {
+    if (!isLanGuessingTerminal) {
+        return wordHints;
+    }
+    return wordHints.map((hint) => {
+        const character = hint.character;
+        const alwaysVisible =
+            character === 32 || character === 45 || character === 95;
+        if (!character || hint.revealed || alwaysVisible) {
+            return hint;
+        }
+        return {
+            ...hint,
+            character: 0,
+            underline: true,
+        };
+    });
+}
+
 const applyWordHints = (wordHints, dummy) => {
-    const isDrawer = drawerID === ownID;
+    const isDrawer = isLanDrawingTerminal || (!isLanGuessingTerminal && drawerID === ownID);
+    const displayWordHints = wordHintsForTerminal(wordHints);
 
     let wordLengths = [];
     let count = 0;
 
     wordContainer.replaceChildren(
-        ...wordHints.map((hint, index) => {
+        ...displayWordHints.map((hint, index) => {
             const hintSpan = document.createElement("span");
             hintSpan.classList.add("hint");
             if (dummy) {
@@ -1626,7 +2100,7 @@ const applyWordHints = (wordHints, dummy) => {
             if (hint.character === 32) {
                 wordLengths.push(count);
                 count = 0;
-            } else if (index === wordHints.length - 1) {
+            } else if (index === displayWordHints.length - 1) {
                 count += 1;
                 wordLengths.push(count);
             } else {
@@ -1899,6 +2373,11 @@ function getModifierKey(event, modifierKey) {
 
 
 function onKeyDown(event) {
+    if (isLanGuessingTerminal) {
+        event.preventDefault();
+        return;
+    }
+
     //Avoid firing actions if the user is in the chat.
     if (document.activeElement instanceof HTMLInputElement) {
         return;
@@ -2114,6 +2593,14 @@ const connectToWebsocket = () => {
         };
 
         console.log("Successfully Connected");
+        if (lanTerminalRole) {
+            socket.send(
+                JSON.stringify({
+                    type: "lan-terminal-role",
+                    data: lanTerminalRole,
+                }),
+            );
+        }
     };
 };
 

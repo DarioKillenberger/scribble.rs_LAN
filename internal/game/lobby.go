@@ -103,6 +103,19 @@ func (lobby *Lobby) HandleEvent(eventType string, payload []byte, player *Player
 		}
 
 		handleMessage(message.Data, player, lobby)
+	} else if eventType == EventTypeLanTerminalRole {
+		var role LanTerminalRoleEvent
+		if err := json.Unmarshal(payload, &role); err != nil {
+			return fmt.Errorf("invalid data received: '%s'", string(payload))
+		}
+
+		lobby.setLanTerminalRole(player, role.Data)
+	} else if eventType == EventTypeLanStartConfirm {
+		if lobby.LobbyMode == LobbyModeLanParty && lobby.canUseLanController(player) && lobby.lanStartPending {
+			lobby.lanStartConfirmed = true
+			lobby.lanStartPending = false
+			lobby.startGame()
+		}
 	} else if eventType == EventTypeLine {
 		if lobby.canDraw(player) {
 			var line LineEvent
@@ -127,7 +140,11 @@ func (lobby *Lobby) HandleEvent(eventType string, payload []byte, player *Player
 			lobby.AppendLine(&line)
 
 			// We directly forward the event, as it seems to be valid.
-			lobby.broadcastConditional(&line, ExcludePlayer(player))
+			if lobby.LobbyMode == LobbyModeLanParty {
+				lobby.Broadcast(&line)
+			} else {
+				lobby.broadcastConditional(&line, ExcludePlayer(player))
+			}
 		}
 	} else if eventType == EventTypeFill {
 		if lobby.canDraw(player) {
@@ -142,14 +159,22 @@ func (lobby *Lobby) HandleEvent(eventType string, payload []byte, player *Player
 			lobby.AppendFill(&fill)
 
 			// We directly forward the event, as it seems to be valid.
-			lobby.broadcastConditional(&fill, ExcludePlayer(player))
+			if lobby.LobbyMode == LobbyModeLanParty {
+				lobby.Broadcast(&fill)
+			} else {
+				lobby.broadcastConditional(&fill, ExcludePlayer(player))
+			}
 		}
 	} else if eventType == EventTypeClearDrawingBoard {
 		if lobby.canDraw(player) && len(lobby.currentDrawing) > 0 {
 			lobby.ClearDrawing()
-			lobby.broadcastConditional(
-				EventTypeOnly{Type: EventTypeClearDrawingBoard},
-				ExcludePlayer(player))
+			if lobby.LobbyMode == LobbyModeLanParty {
+				lobby.Broadcast(EventTypeOnly{Type: EventTypeClearDrawingBoard})
+			} else {
+				lobby.broadcastConditional(
+					EventTypeOnly{Type: EventTypeClearDrawingBoard},
+					ExcludePlayer(player))
+			}
 		}
 	} else if eventType == EventTypeUndo {
 		if lobby.canDraw(player) && len(lobby.currentDrawing) > 0 && len(lobby.connectedDrawEventsIndexStack) > 0 {
@@ -165,7 +190,7 @@ func (lobby *Lobby) HandleEvent(eventType string, payload []byte, player *Player
 		if err := json.Unmarshal(payload, &wordChoice); err != nil {
 			return fmt.Errorf("error decoding data: %w", err)
 		}
-		if player.State == Drawing {
+		if player.State == Drawing || lobby.canDrawAsTerminal(player) {
 			if err := lobby.selectWord(wordChoice.Data); err != nil {
 				return err
 			}
@@ -277,7 +302,7 @@ func handleMessage(message string, sender *Player, lobby *Lobby) {
 
 	// Rate limitting is silent, we will pretend the message was sent, but not show any other players.
 	// Additionally, both close and correct guesses will be ignored.
-	if isRatelimited(sender) {
+	if !sender.LanVirtual && isRatelimited(sender) {
 		if sender.State != Guessing && lobby.CurrentWord != "" {
 			_ = lobby.WriteObject(sender, newMessageEvent(EventTypeNonGuessingPlayerMessage, trimmedMessage, sender))
 		} else {
@@ -329,11 +354,28 @@ func handleMessage(message string, sender *Player, lobby *Lobby) {
 			// This allows other players to guess the word by watching what the
 			// other players are misstyping.
 			lobby.broadcastMessage(trimmedMessage, sender)
-			_ = lobby.WriteObject(sender, Event{Type: EventTypeCloseGuess, Data: trimmedMessage})
+			lobby.sendCloseGuess(sender, trimmedMessage)
 		}
 	default:
 		lobby.broadcastMessage(trimmedMessage, sender)
 	}
+}
+
+func (lobby *Lobby) sendCloseGuess(sender *Player, message string) {
+	event := newMessageEvent(EventTypeCloseGuess, message, sender)
+	if lobby.LobbyMode == LobbyModeLanParty && sender.LanVirtual {
+		sentToTerminal := false
+		for _, player := range lobby.players {
+			if player.hasLanTerminalRole(LanTerminalRoleGuessing) {
+				lobby.writeObjectToLanRole(player, LanTerminalRoleGuessing, event)
+				sentToTerminal = true
+			}
+		}
+		if sentToTerminal {
+			return
+		}
+	}
+	_ = lobby.WriteObject(sender, event)
 }
 
 func (lobby *Lobby) wasLastDrawEventFill() bool {
@@ -415,6 +457,12 @@ func (lobby *Lobby) broadcastConditional(data any, condition func(*Player) bool)
 }
 
 func (lobby *Lobby) startGame() {
+	if lobby.LobbyMode == LobbyModeLanParty && !lobby.lanStartConfirmed {
+		lobby.lanStartPending = true
+		lobby.Broadcast(&Event{Type: EventTypeLanStartPending})
+		return
+	}
+
 	// We are reseting each players score, since players could
 	// technically be player a second game after the last one
 	// has already ended.
@@ -427,6 +475,8 @@ func (lobby *Lobby) startGame() {
 
 	// Cause advanceLobby to start at round 1, starting the game anew.
 	lobby.Round = 0
+	lobby.lanStartConfirmed = false
+	lobby.lanStartPending = false
 
 	advanceLobby(lobby)
 }
@@ -690,6 +740,7 @@ func advanceLobbyPredefineDrawer(lobby *Lobby, roundOver bool, newDrawer *Player
 	}
 
 	lobby.ClearDrawing()
+	lobby.resetLanInputBuffers()
 	newDrawer.State = Drawing
 	lobby.State = Ongoing
 	lobby.wordChoice = GetRandomWords(lobby.WordsPerTurn, lobby)
@@ -713,6 +764,14 @@ func advanceLobbyPredefineDrawer(lobby *Lobby, roundOver bool, newDrawer *Player
 	go startTurnTimeTicker(lobby, lobby.timeLeftTicker)
 
 	lobby.SendYourTurnEvent(newDrawer)
+	if lobby.LobbyMode == LobbyModeLanParty {
+		for _, player := range lobby.players {
+			if player != newDrawer && player.hasLanTerminalRole(LanTerminalRoleDrawing) {
+				lobby.SendYourTurnEventToRole(player, LanTerminalRoleDrawing)
+			}
+		}
+		lobby.broadcastLanInputState()
+	}
 }
 
 // advanceLobby will either start the game or jump over to the next turn.
@@ -841,17 +900,7 @@ func (lobby *Lobby) tickLogic(expectedTicker *time.Ticker) bool {
 					lobby.wordHints[randomIndex].Character = []rune(lobby.CurrentWord)[randomIndex]
 					lobby.wordHints[randomIndex].Revealed = true
 					lobby.wordHintsShown[randomIndex].Revealed = true
-					wordHintData := &Event{
-						Type: EventTypeUpdateWordHint,
-						Data: lobby.wordHints,
-					}
-					lobby.broadcastConditional(wordHintData, IsAllowedToSeeHints)
-
-					wordHintsShownData := &Event{
-						Type: EventTypeUpdateWordHint,
-						Data: lobby.wordHintsShown,
-					}
-					lobby.broadcastConditional(wordHintsShownData, IsAllowedToSeeRevealedHints)
+					lobby.broadcastWordHints(EventTypeUpdateWordHint, lobby.wordHints, lobby.wordHintsShown)
 					break
 				}
 			}
@@ -1010,22 +1059,8 @@ func (lobby *Lobby) selectWord(index int) error {
 		}
 	}
 
-	wordHintData := &Event{
-		Type: EventTypeWordChosen,
-		Data: &WordChosen{
-			Hints:    lobby.wordHints,
-			TimeLeft: int(lobby.roundEndTime - getTimeAsMillis()),
-		},
-	}
-	lobby.broadcastConditional(wordHintData, IsAllowedToSeeHints)
-	wordHintDataRevealed := &Event{
-		Type: EventTypeWordChosen,
-		Data: &WordChosen{
-			Hints:    lobby.wordHintsShown,
-			TimeLeft: int(lobby.roundEndTime - getTimeAsMillis()),
-		},
-	}
-	lobby.broadcastConditional(wordHintDataRevealed, IsAllowedToSeeRevealedHints)
+	lobby.broadcastWordChosen(int(lobby.roundEndTime - getTimeAsMillis()))
+	lobby.broadcastLanInputState()
 
 	return nil
 }
@@ -1077,6 +1112,7 @@ func CreateLobby(
 
 	player := lobby.JoinPlayer(playerName)
 	lobby.OwnerID = player.ID
+	lobby.initializeLanPartyPlayers()
 
 	return player, lobby, nil
 }
@@ -1089,9 +1125,13 @@ func generatePlayerName() string {
 }
 
 func generateReadyData(lobby *Lobby, player *Player) *ReadyEvent {
+	return generateReadyDataForLanRole(lobby, player, LanTerminalRoleNone)
+}
+
+func generateReadyDataForLanRole(lobby *Lobby, player *Player, role LanTerminalRole) *ReadyEvent {
 	ready := &ReadyEvent{
 		PlayerID:     player.ID,
-		AllowDrawing: player.State == Drawing,
+		AllowDrawing: player.State == Drawing || lobby.canDrawAsTerminal(player),
 		PlayerName:   player.Name,
 
 		GameState:          lobby.State,
@@ -1099,9 +1139,20 @@ func generateReadyData(lobby *Lobby, player *Player) *ReadyEvent {
 		Round:              lobby.Round,
 		Rounds:             lobby.Rounds,
 		DrawingTimeSetting: lobby.DrawingTime,
-		WordHints:          lobby.GetAvailableWordHints(player),
+		WordHints:          lobby.GetAvailableWordHintsForLanRole(player, role),
 		Players:            lobby.players,
 		CurrentDrawing:     lobby.currentDrawing,
+		LobbyMode:          lobby.LobbyMode,
+	}
+	if lobby.LobbyMode == LobbyModeLanParty {
+		if role != LanTerminalRoleNone {
+			ready.AllowDrawing = role == LanTerminalRoleDrawing && lobby.CurrentWord != "" && lobby.State == Ongoing
+		}
+		ready.LanInputState = lobby.LanInputState()
+		ready.LanStartPending = lobby.lanStartPending
+		if player.ID == lobby.OwnerID {
+			ready.LanControlToken = lobby.LanControlToken
+		}
 	}
 
 	if lobby.State != Ongoing {
@@ -1115,14 +1166,22 @@ func generateReadyData(lobby *Lobby, player *Player) *ReadyEvent {
 }
 
 func (lobby *Lobby) SendYourTurnEvent(player *Player) {
-	lobby.WriteObject(player, &Event{
+	lobby.WriteObject(player, lobby.yourTurnEvent())
+}
+
+func (lobby *Lobby) SendYourTurnEventToRole(player *Player, role LanTerminalRole) {
+	lobby.writeObjectToLanRole(player, role, lobby.yourTurnEvent())
+}
+
+func (lobby *Lobby) yourTurnEvent() *Event {
+	return &Event{
 		Type: EventTypeYourTurn,
 		Data: &YourTurn{
 			TimeLeft:        int(lobby.wordChoiceEndTime.UnixMilli() - getTimeAsMillis()),
 			PreSelectedWord: lobby.preSelectedWord,
 			Words:           lobby.wordChoice,
 		},
-	})
+	}
 }
 
 func (lobby *Lobby) OnPlayerConnectUnsynchronized(player *Player) {
@@ -1149,7 +1208,7 @@ func (lobby *Lobby) OnPlayerConnectUnsynchronized(player *Player) {
 
 func (lobby *Lobby) OnPlayerDisconnect(player *Player) {
 	// We want to avoid calling the handler twice.
-	if player.ws == nil {
+	if !player.Connected {
 		return
 	}
 
@@ -1158,7 +1217,9 @@ func (lobby *Lobby) OnPlayerDisconnect(player *Player) {
 	// It is important to properly disconnect the player before aqcuiring the mutex
 	// in order to avoid false assumptions about the players connection state
 	// and avoid attempting to send events.
-	player.Connected = false
+	if !player.LanVirtual || lobby.LobbyMode != LobbyModeLanParty {
+		player.Connected = false
+	}
 	player.ws = nil
 
 	lobby.mutex.Lock()
@@ -1191,6 +1252,18 @@ func (lobby *Lobby) OnPlayerDisconnect(player *Player) {
 // game state, since people that are drawing or have already guessed correctly
 // can see all hints.
 func (lobby *Lobby) GetAvailableWordHints(player *Player) []*WordHint {
+	return lobby.GetAvailableWordHintsForLanRole(player, LanTerminalRoleNone)
+}
+
+func (lobby *Lobby) GetAvailableWordHintsForLanRole(player *Player, role LanTerminalRole) []*WordHint {
+	if lobby.LobbyMode == LobbyModeLanParty {
+		if role == LanTerminalRoleGuessing {
+			return lobby.wordHints
+		}
+		if role == LanTerminalRoleDrawing {
+			return lobby.wordHintsShown
+		}
+	}
 	// The draw simple gets every character as a word-hint. We basically abuse
 	// the hints for displaying the word, instead of having yet another GUI
 	// element that wastes space.
@@ -1199,6 +1272,42 @@ func (lobby *Lobby) GetAvailableWordHints(player *Player) []*WordHint {
 	}
 
 	return lobby.wordHints
+}
+
+func (lobby *Lobby) broadcastWordChosen(timeLeft int) {
+	lobby.broadcastWordHints(
+		EventTypeWordChosen,
+		&WordChosen{Hints: lobby.wordHints, TimeLeft: timeLeft},
+		&WordChosen{Hints: lobby.wordHintsShown, TimeLeft: timeLeft},
+	)
+}
+
+func (lobby *Lobby) broadcastWordHints(eventType string, hiddenData any, revealedData any) {
+	if lobby.LobbyMode != LobbyModeLanParty {
+		lobby.broadcastConditional(&Event{Type: eventType, Data: hiddenData}, IsAllowedToSeeHints)
+		lobby.broadcastConditional(&Event{Type: eventType, Data: revealedData}, IsAllowedToSeeRevealedHints)
+		return
+	}
+
+	for _, player := range lobby.players {
+		sentToTerminal := false
+		if player.hasLanTerminalRole(LanTerminalRoleGuessing) {
+			lobby.writeObjectToLanRole(player, LanTerminalRoleGuessing, &Event{Type: eventType, Data: hiddenData})
+			sentToTerminal = true
+		}
+		if player.hasLanTerminalRole(LanTerminalRoleDrawing) {
+			lobby.writeObjectToLanRole(player, LanTerminalRoleDrawing, &Event{Type: eventType, Data: revealedData})
+			sentToTerminal = true
+		}
+		if sentToTerminal {
+			continue
+		}
+		if IsAllowedToSeeHints(player) {
+			_ = lobby.WriteObject(player, &Event{Type: eventType, Data: hiddenData})
+		} else if IsAllowedToSeeRevealedHints(player) {
+			_ = lobby.WriteObject(player, &Event{Type: eventType, Data: revealedData})
+		}
+	}
 }
 
 // JoinPlayer creates a new player object using the given name and adds it
@@ -1225,7 +1334,7 @@ func (lobby *Lobby) JoinPlayer(name string) *Player {
 }
 
 func (lobby *Lobby) canDraw(player *Player) bool {
-	return player.State == Drawing && lobby.CurrentWord != "" && lobby.State == Ongoing
+	return (player.State == Drawing || lobby.canDrawAsTerminal(player)) && lobby.CurrentWord != "" && lobby.State == Ongoing
 }
 
 // Shutdown sends all players an event, indicating that the lobby

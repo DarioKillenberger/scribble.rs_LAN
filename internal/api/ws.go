@@ -114,8 +114,10 @@ func (c *socketHandler) OnClose(socket *gws.Conn, _ error) {
 	}
 
 	metrics.TrackPlayerDisconnect()
-	lobby.OnPlayerDisconnect(player)
-	player.SetWebsocket(nil)
+	player.RemoveWebsocket(socket)
+	if !player.HasWebsockets() {
+		lobby.OnPlayerDisconnect(player)
+	}
 }
 
 func (c *socketHandler) OnPing(socket *gws.Conn, _ []byte) {
@@ -141,10 +143,10 @@ func (c *socketHandler) OnMessage(socket *gws.Conn, message *gws.Message) {
 	}
 
 	bytes := message.Bytes()
-	handleIncommingEvent(lobby, player, bytes)
+	handleIncommingEvent(lobby, player, socket, bytes)
 }
 
-func handleIncommingEvent(lobby *game.Lobby, player *game.Player, data []byte) {
+func handleIncommingEvent(lobby *game.Lobby, player *game.Player, socket *gws.Conn, data []byte) {
 	defer func() {
 		if err := recover(); err != nil {
 			log.Printf("Error occurred in incomming event listener.\n\tError: %s\n\tPlayer: %s(%s)\nStack %s\n", err, player.Name, player.ID, string(debug.Stack()))
@@ -165,14 +167,36 @@ func handleIncommingEvent(lobby *game.Lobby, player *game.Player, data []byte) {
 		return
 	}
 
+	if event.Type == game.EventTypeLanTerminalRole {
+		var role game.LanTerminalRoleEvent
+		if err := json.Unmarshal(data, &role); err == nil {
+			switch role.Data {
+			case game.LanTerminalRoleDrawing, game.LanTerminalRoleGuessing:
+				socket.Session().Store("lanTerminalRole", role.Data)
+			default:
+			}
+		}
+	}
+	if lanTerminalRole, _ := socket.Session().Load("lanTerminalRole"); lanTerminalRole == game.LanTerminalRoleGuessing && isDrawingOnlyEvent(event.Type) {
+		return
+	}
+
 	if err := lobby.HandleEvent(event.Type, data, player); err != nil {
 		log.Printf("Error handling event: %s\n", err)
 	}
 }
 
+func isDrawingOnlyEvent(eventType string) bool {
+	return eventType == game.EventTypeChooseWord ||
+		eventType == game.EventTypeLine ||
+		eventType == game.EventTypeFill ||
+		eventType == game.EventTypeClearDrawingBoard ||
+		eventType == game.EventTypeUndo
+}
+
 func WriteObject(player *game.Player, object any) error {
-	socket := player.GetWebsocket()
-	if socket == nil || !player.Connected {
+	sockets := player.GetWebsockets()
+	if len(sockets) == 0 || !player.Connected {
 		return ErrPlayerNotConnected
 	}
 
@@ -183,19 +207,62 @@ func WriteObject(player *game.Player, object any) error {
 
 	// We write async, as broadcast always uses the queue. If we use write, the
 	// order will become messed up, potentially causing issues in the frontend.
-	socket.WriteAsync(gws.OpcodeText, bytes, func(err error) {
-		if err != nil {
-			log.Println("Error responding to player:", err.Error())
-		}
+	for _, socket := range sockets {
+		socket.WriteAsync(gws.OpcodeText, bytes, func(err error) {
+			if err != nil {
+				log.Println("Error responding to player:", err.Error())
+			}
+		})
+	}
+	return nil
+}
+
+func WriteObjectToRole(player *game.Player, role game.LanTerminalRole, object any) error {
+	return writeObjectFiltered(player, object, func(socket *gws.Conn) bool {
+		socketRole, _ := socket.Session().Load("lanTerminalRole")
+		return socketRole == role
 	})
+}
+
+func writeObjectFiltered(player *game.Player, object any, include func(*gws.Conn) bool) error {
+	sockets := player.GetWebsockets()
+	if len(sockets) == 0 || !player.Connected {
+		return ErrPlayerNotConnected
+	}
+
+	bytes, err := json.Marshal(object)
+	if err != nil {
+		return fmt.Errorf("error marshalling payload: %w", err)
+	}
+
+	wrote := false
+	for _, socket := range sockets {
+		if !include(socket) {
+			continue
+		}
+		wrote = true
+		socket.WriteAsync(gws.OpcodeText, bytes, func(err error) {
+			if err != nil {
+				log.Println("Error responding to player:", err.Error())
+			}
+		})
+	}
+	if !wrote {
+		return ErrPlayerNotConnected
+	}
 	return nil
 }
 
 func WritePreparedMessage(player *game.Player, message *gws.Broadcaster) error {
-	socket := player.GetWebsocket()
-	if socket == nil || !player.Connected {
+	sockets := player.GetWebsockets()
+	if len(sockets) == 0 || !player.Connected {
 		return ErrPlayerNotConnected
 	}
 
-	return message.Broadcast(socket)
+	for _, socket := range sockets {
+		if err := message.Broadcast(socket); err != nil {
+			return err
+		}
+	}
+	return nil
 }

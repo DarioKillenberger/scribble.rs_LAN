@@ -74,6 +74,13 @@
                                 </option>
                                 {{end}}
                             </select>
+                            <label class="lobby-create-label" for="lobby_mode">
+                                {{.Translation.Get "lobby-mode"}}
+                            </label>
+                            <select class="input-item" name="lobby_mode" id="lobby_mode">
+                                <option value="classic" label="{{.Translation.Get "classic-lobby-mode"}}" {{if or (eq .LobbyMode "classic") (eq .LobbyMode "")}}selected="selected"{{end}}></option>
+                                <option value="lan_party" label="{{.Translation.Get "lan-party-lobby-mode"}}" {{if eq .LobbyMode "lan_party"}}selected="selected"{{end}}></option>
+                            </select>
                             <label class="lobby-create-label" for="drawing_time">
                                 {{.Translation.Get "drawing-time-setting"}}
                             </label>
@@ -141,6 +148,24 @@
                                 </label>
                                 <textarea class="input-item" name="custom_words" id="custom_words"
                                     placeholder="{{.Translation.Get "custom-words-placeholder"}}">{{.CustomWords}}</textarea>
+                                <label class="lobby-create-label" for="lan_player_count">
+                                    {{.Translation.Get "lan-player-count"}}
+                                </label>
+                                <div class="number-input">
+                                    <button class="number-decrement" type="button">-</button>
+                                    <input size="4" type="number" name="lan_player_count" id="lan_player_count"
+                                        min="{{.MinMaxPlayers}}" max="{{.MaxMaxPlayers}}" value="{{.LanPlayerCount}}">
+                                    <button class="number-increment" type="button">+</button>
+                                </div>
+                                <label class="lobby-create-label" for="lan_keyboard_count">
+                                    {{.Translation.Get "lan-keyboard-count"}}
+                                </label>
+                                <div class="number-input">
+                                    <button class="number-decrement" type="button">-</button>
+                                    <input size="4" type="number" name="lan_keyboard_count" id="lan_keyboard_count"
+                                        min="1" max="{{.MaxMaxPlayers}}" value="{{.LanKeyboardCount}}">
+                                    <button class="number-increment" type="button">+</button>
+                                </div>
                             </div>
 
                             <input type="checkbox" id="public-check-box" name="public" value="true"

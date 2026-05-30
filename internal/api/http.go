@@ -16,6 +16,7 @@ func (handler *V1Handler) SetupRoutes(rootPath string, register func(string, str
 		register("GET", path.Join(v1, "metrics"), metricsHandler)
 	})
 	register("GET", path.Join(v1, "stats"), handler.getStats)
+	register("GET", path.Join(v1, "lan", "network-addresses"), handler.getLanNetworkAddresses)
 
 	// These exist only for the public API. We version them in order to ensure
 	// backwards compatibility as far as possible.
@@ -32,6 +33,9 @@ func (handler *V1Handler) SetupRoutes(rootPath string, register func(string, str
 	register("GET", path.Join(v1, "lobby", "ws"), handler.websocketUpgrade)
 
 	register("POST", path.Join(v1, "lobby", "{lobby_id}", "player"), handler.postPlayer)
+	register("GET", path.Join(v1, "lobby", "{lobby_id}", "lan", "setup"), handler.getLanSetup)
+	register("POST", path.Join(v1, "lobby", "{lobby_id}", "lan", "input"), handler.postLanInput)
+	register("POST", path.Join(v1, "lobby", "{lobby_id}", "lan", "assignment"), handler.postLanAssignment)
 }
 
 // remoteAddressToSimpleIP removes unnecessary clutter from the input,

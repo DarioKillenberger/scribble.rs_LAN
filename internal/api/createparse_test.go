@@ -140,6 +140,36 @@ func Test_parseMaxPlayers(t *testing.T) {
 	}
 }
 
+func Test_parseLobbyMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		value   string
+		want    game.LobbyMode
+		wantErr bool
+	}{
+		{"empty is classic", "", game.LobbyModeClassic, false},
+		{"classic", "classic", game.LobbyModeClassic, false},
+		{"lan party", "lan_party", game.LobbyModeLanParty, false},
+		{"invalid", "party", "", true},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := ParseLobbyMode(testCase.value)
+			if (err != nil) != testCase.wantErr {
+				t.Errorf("ParseLobbyMode() error = %v, wantErr %v", err, testCase.wantErr)
+				return
+			}
+			if got != testCase.want {
+				t.Errorf("ParseLobbyMode() = %v, want %v", got, testCase.want)
+			}
+		})
+	}
+}
+
 func Test_parseCustomWords(t *testing.T) {
 	t.Parallel()
 

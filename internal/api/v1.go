@@ -47,17 +47,18 @@ type LobbyEntries []*LobbyEntry
 
 // LobbyEntry is an API object for representing a join-able public lobby.
 type LobbyEntry struct {
-	LobbyID         string     `json:"lobbyId"`
-	Wordpack        string     `json:"wordpack"`
-	Scoring         string     `json:"scoring"`
-	State           game.State `json:"state"`
-	PlayerCount     int        `json:"playerCount"`
-	MaxPlayers      int        `json:"maxPlayers"`
-	Round           int        `json:"round"`
-	Rounds          int        `json:"rounds"`
-	DrawingTime     int        `json:"drawingTime"`
-	MaxClientsPerIP int        `json:"maxClientsPerIp"`
-	CustomWords     bool       `json:"customWords"`
+	LobbyID         string         `json:"lobbyId"`
+	Wordpack        string         `json:"wordpack"`
+	Scoring         string         `json:"scoring"`
+	State           game.State     `json:"state"`
+	PlayerCount     int            `json:"playerCount"`
+	MaxPlayers      int            `json:"maxPlayers"`
+	Round           int            `json:"round"`
+	Rounds          int            `json:"rounds"`
+	DrawingTime     int            `json:"drawingTime"`
+	MaxClientsPerIP int            `json:"maxClientsPerIp"`
+	CustomWords     bool           `json:"customWords"`
+	LobbyMode       game.LobbyMode `json:"lobbyMode"`
 }
 
 func (handler *V1Handler) getLobbies(writer http.ResponseWriter, _ *http.Request) {
@@ -81,6 +82,7 @@ func (handler *V1Handler) getLobbies(writer http.ResponseWriter, _ *http.Request
 			Wordpack:        lobby.Wordpack,
 			State:           lobby.State,
 			Scoring:         lobby.ScoreCalculation.Identifier(),
+			LobbyMode:       lobby.LobbyMode,
 		})
 	}
 
@@ -114,6 +116,7 @@ func (handler *V1Handler) postLobby(writer http.ResponseWriter, request *http.Re
 	}
 
 	scoreCalculation, scoreCalculationInvalid := ParseScoreCalculation(request.Form.Get("score_calculation"))
+	lobbyMode, lobbyModeInvalid := ParseLobbyMode(request.Form.Get("lobby_mode"))
 	languageRawValue := strings.ToLower(strings.TrimSpace(request.Form.Get("language")))
 	languageData, languageKey, languageInvalid := ParseLanguage(languageRawValue)
 	drawingTime, drawingTimeInvalid := ParseDrawingTime(handler.cfg, request.Form.Get("drawing_time"))
@@ -123,6 +126,12 @@ func (handler *V1Handler) postLobby(writer http.ResponseWriter, request *http.Re
 	clientsPerIPLimit, clientsPerIPLimitInvalid := ParseClientsPerIPLimit(handler.cfg, request.Form.Get("clients_per_ip_limit"))
 	publicLobby, publicLobbyInvalid := ParseBoolean("public", request.Form.Get("public"))
 	wordsPerTurn, wordsPerTurnInvalid := ParseWordsPerTurn(handler.cfg, request.Form.Get("words_per_turn"))
+	var lanPlayerCount, lanKeyboardCount int
+	var lanPlayerCountInvalid, lanKeyboardCountInvalid error
+	if lobbyMode == game.LobbyModeLanParty {
+		lanPlayerCount, lanPlayerCountInvalid = ParseLanPlayerCount(handler.cfg, request.Form.Get("lan_player_count"))
+		lanKeyboardCount, lanKeyboardCountInvalid = ParseLanKeyboardCount(handler.cfg, request.Form.Get("lan_keyboard_count"))
+	}
 
 	if wordsPerTurn < customWordsPerTurn {
 		wordsPerTurnInvalid = errors.New("words per turn must be greater than or equal to custom words per turn")
@@ -139,6 +148,9 @@ func (handler *V1Handler) postLobby(writer http.ResponseWriter, request *http.Re
 
 	if scoreCalculationInvalid != nil {
 		requestErrors = append(requestErrors, scoreCalculationInvalid.Error())
+	}
+	if lobbyModeInvalid != nil {
+		requestErrors = append(requestErrors, lobbyModeInvalid.Error())
 	}
 	if languageInvalid != nil {
 		requestErrors = append(requestErrors, languageInvalid.Error())
@@ -171,6 +183,12 @@ func (handler *V1Handler) postLobby(writer http.ResponseWriter, request *http.Re
 	if wordsPerTurnInvalid != nil {
 		requestErrors = append(requestErrors, wordsPerTurnInvalid.Error())
 	}
+	if lanPlayerCountInvalid != nil {
+		requestErrors = append(requestErrors, lanPlayerCountInvalid.Error())
+	}
+	if lanKeyboardCountInvalid != nil {
+		requestErrors = append(requestErrors, lanKeyboardCountInvalid.Error())
+	}
 
 	if len(requestErrors) != 0 {
 		http.Error(writer, strings.Join(requestErrors, ";"), http.StatusBadRequest)
@@ -186,6 +204,9 @@ func (handler *V1Handler) postLobby(writer http.ResponseWriter, request *http.Re
 		ClientsPerIPLimit:  clientsPerIPLimit,
 		Public:             publicLobby,
 		WordsPerTurn:       wordsPerTurn,
+		LobbyMode:          lobbyMode,
+		LanPlayerCount:     lanPlayerCount,
+		LanKeyboardCount:   lanKeyboardCount,
 	}
 	player, lobby, err := game.CreateLobby(lobbyId, playerName,
 		languageKey, lobbySettings, customWords, scoreCalculation)
@@ -204,6 +225,7 @@ func (handler *V1Handler) postLobby(writer http.ResponseWriter, request *http.Re
 	}
 
 	lobby.WriteObject = WriteObject
+	lobby.WriteObjectToRole = WriteObjectToRole
 	lobby.WritePreparedMessage = WritePreparedMessage
 	player.SetLastKnownAddress(GetIPAddressFromRequest(request))
 
@@ -385,6 +407,24 @@ func (handler *V1Handler) patchLobby(writer http.ResponseWriter, request *http.R
 	clientsPerIPLimit, clientsPerIPLimitInvalid := ParseClientsPerIPLimit(handler.cfg, request.Form.Get("clients_per_ip_limit"))
 	publicLobby, publicLobbyInvalid := ParseBoolean("public", request.Form.Get("public"))
 	wordsPerTurn, wordsPerTurnInvalid := ParseWordsPerTurn(handler.cfg, request.Form.Get("words_per_turn"))
+	lobbyMode, lobbyModeInvalid := ParseLobbyMode(request.Form.Get("lobby_mode"))
+	if request.Form.Get("lobby_mode") == "" {
+		lobbyMode = lobby.LobbyMode
+	}
+	var lanPlayerCount, lanKeyboardCount int
+	var lanPlayerCountInvalid, lanKeyboardCountInvalid error
+	if lobbyMode == game.LobbyModeLanParty {
+		if request.Form.Get("lan_player_count") == "" {
+			lanPlayerCount = lobby.LanPlayerCount
+		} else {
+			lanPlayerCount, lanPlayerCountInvalid = ParseLanPlayerCount(handler.cfg, request.Form.Get("lan_player_count"))
+		}
+		if request.Form.Get("lan_keyboard_count") == "" {
+			lanKeyboardCount = lobby.LanKeyboardCount
+		} else {
+			lanKeyboardCount, lanKeyboardCountInvalid = ParseLanKeyboardCount(handler.cfg, request.Form.Get("lan_keyboard_count"))
+		}
+	}
 
 	if wordsPerTurn < customWordsPerTurn {
 		wordsPerTurnInvalid = errors.New("words per turn must be greater than or equal to custom words per turn")
@@ -422,6 +462,18 @@ func (handler *V1Handler) patchLobby(writer http.ResponseWriter, request *http.R
 	if wordsPerTurnInvalid != nil {
 		requestErrors = append(requestErrors, wordsPerTurnInvalid.Error())
 	}
+	if lobbyModeInvalid != nil {
+		requestErrors = append(requestErrors, lobbyModeInvalid.Error())
+	}
+	if lobbyMode != lobby.LobbyMode {
+		requestErrors = append(requestErrors, "can't modify lobby mode in existing lobby")
+	}
+	if lanPlayerCountInvalid != nil {
+		requestErrors = append(requestErrors, lanPlayerCountInvalid.Error())
+	}
+	if lanKeyboardCountInvalid != nil {
+		requestErrors = append(requestErrors, lanKeyboardCountInvalid.Error())
+	}
 
 	if len(requestErrors) != 0 {
 		http.Error(writer, strings.Join(requestErrors, ";"), http.StatusBadRequest)
@@ -441,6 +493,10 @@ func (handler *V1Handler) patchLobby(writer http.ResponseWriter, request *http.R
 		lobby.Public = publicLobby
 		lobby.Rounds = rounds
 		lobby.WordsPerTurn = wordsPerTurn
+		if lobby.LobbyMode == game.LobbyModeLanParty {
+			lobby.LanPlayerCount = lanPlayerCount
+			lobby.LanKeyboardCount = lanKeyboardCount
+		}
 
 		if lobby.State == game.Ongoing {
 			lobby.DrawingTimeNew = drawingTime

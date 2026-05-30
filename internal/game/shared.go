@@ -19,6 +19,8 @@ const (
 	EventTypeRequestDrawing  = "request-drawing"
 	EventTypeChooseWord      = "choose-word"
 	EventTypeUndo            = "undo"
+	EventTypeLanTerminalRole = "lan-terminal-role"
+	EventTypeLanStartConfirm = "lan-start-confirm"
 )
 
 // Events that are outgoing only.
@@ -40,6 +42,9 @@ const (
 	EventTypeLobbySettingsChanged     = "lobby-settings-changed"
 	EventTypeShutdown                 = "shutdown"
 	EventTypeKeepAlive                = "keep-alive"
+	EventTypeLanInputState            = "lan-input-state"
+	EventTypeLanAssignmentUpdate      = "lan-assignment-update"
+	EventTypeLanStartPending          = "lan-start-pending"
 )
 
 // Events that are bidirectional.
@@ -64,6 +69,21 @@ const (
 	GameOver State = "gameOver"
 )
 
+type LobbyMode string
+
+const (
+	LobbyModeClassic  LobbyMode = "classic"
+	LobbyModeLanParty LobbyMode = "lan_party"
+)
+
+type LanTerminalRole string
+
+const (
+	LanTerminalRoleNone     LanTerminalRole = ""
+	LanTerminalRoleDrawing  LanTerminalRole = "drawing_terminal"
+	LanTerminalRoleGuessing LanTerminalRole = "guessing_terminal"
+)
+
 // Event contains an eventtype and optionally any data.
 type Event struct {
 	Data any    `json:"data"`
@@ -80,6 +100,10 @@ type EventTypeOnly struct {
 
 type IntDataEvent struct {
 	Data int `json:"data"`
+}
+
+type LanTerminalRoleEvent struct {
+	Data LanTerminalRole `json:"data"`
 }
 
 // WordHint describes a character of the word that is to be guessed, whether
@@ -195,18 +219,50 @@ type OutgoingMessage struct {
 // This includes all the necessary things for properly running a client
 // without receiving any more data.
 type ReadyEvent struct {
-	WordHints          []*WordHint `json:"wordHints"`
-	PlayerName         string      `json:"playerName"`
-	Players            []*Player   `json:"players"`
-	GameState          State       `json:"gameState"`
-	CurrentDrawing     []any       `json:"currentDrawing"`
-	PlayerID           uuid.UUID   `json:"playerId"`
-	OwnerID            uuid.UUID   `json:"ownerId"`
-	Round              int         `json:"round"`
-	Rounds             int         `json:"rounds"`
-	TimeLeft           int         `json:"timeLeft"`
-	DrawingTimeSetting int         `json:"drawingTimeSetting"`
-	AllowDrawing       bool        `json:"allowDrawing"`
+	WordHints          []*WordHint         `json:"wordHints"`
+	PlayerName         string              `json:"playerName"`
+	Players            []*Player           `json:"players"`
+	GameState          State               `json:"gameState"`
+	CurrentDrawing     []any               `json:"currentDrawing"`
+	PlayerID           uuid.UUID           `json:"playerId"`
+	OwnerID            uuid.UUID           `json:"ownerId"`
+	Round              int                 `json:"round"`
+	Rounds             int                 `json:"rounds"`
+	TimeLeft           int                 `json:"timeLeft"`
+	DrawingTimeSetting int                 `json:"drawingTimeSetting"`
+	AllowDrawing       bool                `json:"allowDrawing"`
+	LobbyMode          LobbyMode           `json:"lobbyMode"`
+	LanInputState      *LanInputStateEvent `json:"lanInputState,omitempty"`
+	LanControlToken    string              `json:"lanControlToken,omitempty"`
+	LanStartPending    bool                `json:"lanStartPending,omitempty"`
+}
+
+type LanKeyboardAssignment struct {
+	KeyboardID string    `json:"keyboardId"`
+	PlayerID   uuid.UUID `json:"playerId"`
+}
+
+type LanInputRow struct {
+	PlayerID       uuid.UUID `json:"playerId"`
+	PlayerName     string    `json:"playerName"`
+	Color          string    `json:"color"`
+	KeyboardID     string    `json:"keyboardId,omitempty"`
+	MaskedText     string    `json:"maskedText"`
+	DraftName      string    `json:"draftName,omitempty"`
+	Locked         bool      `json:"locked"`
+	DisabledReason string    `json:"disabledReason,omitempty"`
+	Drawing        bool      `json:"drawing"`
+}
+
+type LanInputStateEvent struct {
+	Rows           []*LanInputRow `json:"rows"`
+	KnownKeyboards []string       `json:"knownKeyboards,omitempty"`
+}
+
+type LanKeyboardInput struct {
+	KeyboardID string `json:"keyboardId"`
+	Key        string `json:"key"`
+	Action     string `json:"action"`
 }
 
 type Ring[T any] struct {
@@ -249,6 +305,7 @@ type Player struct {
 	// userSession uniquely identifies the player.
 	userSession uuid.UUID
 	ws          *gws.Conn
+	websockets  map[*gws.Conn]bool
 	// disconnectTime is used to kick a player in case the lobby doesn't have
 	// space for new players. The player with the oldest disconnect.Time will
 	// get kicked.
@@ -276,7 +333,12 @@ type Player struct {
 	// in order to avoid losing the state on refreshing the page.
 	// While checking the websocket against nil would be enough, we still need
 	// this field for sending it via the APIs.
-	Connected bool `json:"connected"`
+	Connected        bool                     `json:"connected"`
+	LanColor         string                   `json:"lanColor,omitempty"`
+	LanKeyboardID    string                   `json:"lanKeyboardId,omitempty"`
+	LanTerminalRole  LanTerminalRole          `json:"-"`
+	LanTerminalRoles map[LanTerminalRole]bool `json:"-"`
+	LanVirtual       bool                     `json:"lanVirtual,omitempty"`
 	// hasConnectedOnce indicates whether a player has ever connected to the websocket.
 	// This can be false between loading the HTML and connecting to the websocket.
 	hasConnectedOnce bool
@@ -305,5 +367,8 @@ type EditableLobbySettings struct {
 	// finish their drawing.
 	DrawingTime int `json:"drawingTime"`
 	// WordsPerTurn defines how many words the drawer is able to choose from
-	WordsPerTurn int `json:"wordsPerTurn"`
+	WordsPerTurn     int       `json:"wordsPerTurn"`
+	LobbyMode        LobbyMode `json:"lobbyMode"`
+	LanPlayerCount   int       `json:"lanPlayerCount"`
+	LanKeyboardCount int       `json:"lanKeyboardCount"`
 }
