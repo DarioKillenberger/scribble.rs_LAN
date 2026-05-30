@@ -4,6 +4,10 @@
 keyboard-attributed input to a LAN lobby using the LAN control token shown in
 the owner-only setup dialog.
 
+The main `scribblers` server starts local native keyboard capture automatically
+for LAN-party lobbies when `AUTO_LAN_INPUT=true` (the default). Use this helper
+only for debugging, protocol testing, or non-standard setups.
+
 On Windows, the default mode uses Raw Input and reports the Raw Input device
 name as `keyboardId`.
 

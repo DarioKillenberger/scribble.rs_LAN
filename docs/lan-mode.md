@@ -21,13 +21,14 @@ guessing screens.
 3. Pick the number of LAN players and keyboards.
 4. Open the lobby as the owner.
 5. Click `LAN Setup`.
-6. Run the helper command shown in the setup dialog on the host computer.
-7. Press a key on each physical keyboard so the game can discover it.
-8. Assign discovered keyboards to players if the automatic order is not right.
-9. Have each player type their name on their assigned keyboard and press
+6. Press a key on each physical keyboard so the game can discover it.
+7. Assign discovered keyboards to players if the automatic order is not right.
+8. Have each player type their name on their assigned keyboard and press
    `Enter` to ready up.
 
 When everyone is ready, the game starts like a normal Scribble.rs lobby.
+On Windows, the server starts local keyboard capture automatically for the
+active LAN-party lobby. Only one LAN input lobby is active per server process.
 
 ## How Keyboards Work
 
@@ -78,6 +79,8 @@ the drawing device or opening the drawing page.
 
 - `localhost` only works on the host computer. Phones, tablets, and other
   laptops need the host computer's LAN IP address.
+- Native automatic keyboard capture currently works on Windows. Other operating
+  systems can still use the standalone helper in stdin mode for protocol tests.
 - Windows Firewall or router isolation can block the drawing or guessing device
   from reaching the host. If another device cannot open the page, check those
   first.
@@ -94,8 +97,8 @@ the drawing device or opening the drawing page.
 
 ## Quick Troubleshooting
 
-- No keyboards appear: make sure the helper command is still running and that
-  you used the LAN control token from `LAN Setup`.
+- No keyboards appear: make sure Scribble.rs is running on Windows on the
+  computer the keyboards are plugged into, then press a key on each keyboard.
 - Tablet cannot open the drawing page: replace `localhost` with the host's LAN
   IP and check firewall/network isolation.
 - A player is typing into the wrong row: reopen `LAN Setup`, reassign the

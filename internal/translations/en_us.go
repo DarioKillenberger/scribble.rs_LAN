@@ -73,7 +73,7 @@ func initEnglishTranslation() *Translation {
 	translation.put("lan-player-count", "LAN Players")
 	translation.put("lan-keyboard-count", "LAN Keyboards")
 	translation.put("lan-setup-title", "LAN Setup")
-	translation.put("lan-helper-command", "Helper command")
+	translation.put("lan-helper-command", "Keyboard capture")
 	translation.put("lan-keyboard-assignments", "Keyboard assignments")
 	translation.put("save-settings", "Save settings")
 	translation.put("input-contains-invalid-data", "Your input contains invalid data:")

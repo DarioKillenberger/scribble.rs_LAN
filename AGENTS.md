@@ -57,6 +57,13 @@ go build ./cmd/scribblers
 ```
 
 Use the PR-level race command before declaring broad lobby, WebSocket, or state changes complete.
+On this Windows machine, `-race` needs cgo and MSYS2 GCC on `PATH`; use:
+
+```powershell
+$env:PATH='C:\Program Files\Go\bin;C:\msys64\ucrt64\bin;' + $env:PATH
+$env:CGO_ENABLED='1'
+go test -race -count=3 ./...
+```
 
 ## High-Risk Areas
 
@@ -75,4 +82,3 @@ A change is done when:
 - Relevant docs are updated when commands, contracts, config, or architecture change.
 - `go test ./...` passes at minimum.
 - Race tests are run or explicitly called out as not run for changes touching lobby state, WebSockets, timers, or cleanup.
-

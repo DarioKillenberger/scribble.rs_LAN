@@ -65,6 +65,9 @@ type Config struct {
 	// AllowIndexing will control whether the noindex, nofollow meta tag is
 	// added to the home page.
 	AllowIndexing bool `env:"ALLOW_INDEXING"`
+	// AutoLanInput starts local native keyboard capture when a LAN-party lobby
+	// is created. Only one active LAN input lobby is supported per process.
+	AutoLanInput bool `env:"AUTO_LAN_INPUT"`
 	// ServeDirectories is a map of `path` to `directory`. All directories are
 	// served under the given path.
 	ServeDirectories map[string]string `env:"SERVE_DIRECTORIES"`
@@ -80,7 +83,8 @@ type Config struct {
 }
 
 var Default = Config{
-	Port: 8080,
+	Port:         8080,
+	AutoLanInput: true,
 	LobbySettingDefaults: LobbySettingDefaults{
 		Public:             "false",
 		DrawingTime:        "120",

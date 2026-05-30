@@ -13,6 +13,7 @@ import (
 	"github.com/scribble-rs/scribble.rs/internal/api"
 	"github.com/scribble-rs/scribble.rs/internal/config"
 	"github.com/scribble-rs/scribble.rs/internal/game"
+	"github.com/scribble-rs/scribble.rs/internal/laninput"
 	"github.com/scribble-rs/scribble.rs/internal/state"
 	"github.com/scribble-rs/scribble.rs/internal/translations"
 	"github.com/scribble-rs/scribble.rs/internal/version"
@@ -335,6 +336,9 @@ func (handler *SSRHandler) ssrCreateLobby(writer http.ResponseWriter, request *h
 
 	// We only add the lobby if we could do all necessary pre-steps successfully.
 	state.AddLobby(lobby)
+	if handler.cfg.AutoLanInput {
+		laninput.ActivateLobby(lobby)
+	}
 
 	// Workaround for discord activity case not correctly being able to read
 	// user session, as the cookie isn't being passed.

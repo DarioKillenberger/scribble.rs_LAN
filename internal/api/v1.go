@@ -14,6 +14,7 @@ import (
 	"github.com/gofrs/uuid/v5"
 	"github.com/scribble-rs/scribble.rs/internal/config"
 	"github.com/scribble-rs/scribble.rs/internal/game"
+	"github.com/scribble-rs/scribble.rs/internal/laninput"
 	"github.com/scribble-rs/scribble.rs/internal/state"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -242,6 +243,9 @@ func (handler *V1Handler) postLobby(writer http.ResponseWriter, request *http.Re
 
 	// We only add the lobby if everything else was successful.
 	state.AddLobby(lobby)
+	if handler.cfg.AutoLanInput {
+		laninput.ActivateLobby(lobby)
+	}
 }
 
 func (handler *V1Handler) postPlayer(writer http.ResponseWriter, request *http.Request) {

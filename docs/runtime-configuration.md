@@ -15,6 +15,8 @@ Configuration is loaded by `internal/config.Load`.
 - `ROOT_URL`: public scheme and host used for metadata.
 - `CANONICAL_URL`: canonical public URL. Defaults to `ROOT_URL`.
 - `ALLOW_INDEXING`: controls index/noindex behavior on the home page.
+- `AUTO_LAN_INPUT`: automatically starts local native keyboard capture for
+  LAN-party lobbies. Default `true`; currently native capture is Windows-only.
 - `SERVE_DIRECTORIES`: optional map of extra directories served by the frontend handler.
 - `CPU_PROFILE_PATH`: enables CPU profiling output.
 - `CORS_ALLOWED_ORIGINS`: API CORS origins. Default `*`.
@@ -31,4 +33,3 @@ Lobby creation defaults use the `LOBBY_SETTING_DEFAULTS_` prefix. Bounds use `LO
 - Document the variable in this file and `README.md` if user-facing.
 - Add or update tests if parsing, normalization, or default behavior changes.
 - Consider whether SSR defaults and API parsing both need the new setting.
-

@@ -55,6 +55,7 @@ Available settings:
 | PORT                                      | HTTP port that the server listens to.                            | 8080    | True     |
 | NETWORK_ADDRESS                           | TCP address that the server listens to.                          |         | False    |
 | ROOT_PATH                                 | Changes the path (after your domain) that the server listens to. |         | False    |
+| AUTO_LAN_INPUT                            | Starts local native keyboard capture for LAN-party lobbies.      | true    | False    |
 | CORS_ALLOWED_ORIGINS                      |                                                                  | *       | False    |
 | CORS_ALLOW_CREDENTIALS                    |                                                                  |         | False    |
 | LOBBY_CLEANUP_INTERVAL                    |                                                                  | 90s     | False    |

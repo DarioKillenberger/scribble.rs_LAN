@@ -1712,16 +1712,8 @@ function renderLanSetup() {
         return;
     }
 
-    const token = lanControlToken || "<open LAN Setup as the lobby owner>";
-    lanHelperCommand.value = [
-        "go run ./cmd/laninput",
-        "-server",
-        window.location.origin + rootPath,
-        "-lobby",
-        getCookie("lobby-id") || "",
-        "-token",
-        token,
-    ].join(" ");
+    lanHelperCommand.value =
+        "Automatic on the server PC. Press a key on each connected keyboard to discover it.";
 
     const knownKeyboards = cachedLanInputState.knownKeyboards || [];
     lanAssignmentList.replaceChildren(
