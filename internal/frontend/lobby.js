@@ -1063,23 +1063,15 @@ const handleEvent = (parsed) => {
     } else if (parsed.type === "correct-guess") {
         playWav('{{.RootPath}}/resources/{{.WithCacheBust "plop.wav"}}');
 
-        if (parsed.data === ownID) {
+        const player = getCachedPlayer(parsed.data);
+        if (player !== null) {
             appendMessage(
-                "correct-guess-message",
+                "correct-guess-message-other-player",
                 null,
-                `{{.Translation.Get "correct-guess"}}`,
+                `{{.Translation.Get "correct-guess-other-player"}}`.format(
+                    player.name,
+                ),
             );
-        } else {
-            const player = getCachedPlayer(parsed.data);
-            if (player !== null) {
-                appendMessage(
-                    "correct-guess-message-other-player",
-                    null,
-                    `{{.Translation.Get "correct-guess-other-player"}}`.format(
-                        player.name,
-                    ),
-                );
-            }
         }
     } else if (parsed.type === "close-guess") {
         const closeGuess =

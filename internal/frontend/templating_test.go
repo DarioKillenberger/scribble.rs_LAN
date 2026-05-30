@@ -2,6 +2,9 @@ package frontend
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/scribble-rs/scribble.rs/internal/api"
@@ -57,5 +60,24 @@ func Test_templateIndexPage(t *testing.T) {
 	var buffer bytes.Buffer
 	if err := pageTemplates.ExecuteTemplate(&buffer, "index", createPageData); err != nil {
 		t.Errorf("Error templating: %s", err)
+	}
+}
+
+func Test_templateLobbyJsCorrectGuessAlwaysUsesPlayerName(t *testing.T) {
+	t.Parallel()
+
+	handler, err := NewHandler(&config.Config{})
+	require.NoError(t, err)
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/lobby.js", nil)
+	handler.lobbyJs(response, request)
+
+	body := response.Body.String()
+	if strings.Contains(body, translations.DefaultTranslation.Get("correct-guess")) {
+		t.Fatal("lobby.js should not render the self-only correct guess message")
+	}
+	if !strings.Contains(body, translations.DefaultTranslation.Get("correct-guess-other-player")) {
+		t.Fatal("lobby.js should render the player-name correct guess message")
 	}
 }

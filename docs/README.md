@@ -6,4 +6,4 @@ These documents are written for coding agents and maintainers working in this re
 - [Agentic Coding](agentic-coding.md): how to split work, define completion criteria, and review AI-generated changes.
 - [Testing](testing.md): validation commands, test ownership, and risk-based test expectations.
 - [Runtime Configuration](runtime-configuration.md): config loading, important environment variables, deployment notes.
-
+- [LAN Mode](lan-mode.md): player-facing setup and play guide for LAN-party lobbies.
